@@ -57,7 +57,7 @@ benchmark:
       hot_orders_access_ratio: 80
     
     medium:
-      order_count: 50000
+      order_count: 10000
       items_per_order_min: 10
       items_per_order_max: 100
       items_distribution: "uniform"
