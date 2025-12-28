@@ -1,14 +1,20 @@
 package com.benchmark.metrics;
 
 import java.util.*;
+import java.util.concurrent.ThreadLocalRandom;
 
 public class MetricsCollector {
-    private final List<Long> latencies;
+    private static final int SHARD_COUNT = 100;
+    private final List<Long>[] arrayOfLatencies;
     private long startTime;
     private long endTime;
 
+    @SuppressWarnings("unchecked")
     public MetricsCollector() {
-        this.latencies = Collections.synchronizedList(new ArrayList<>());
+        this.arrayOfLatencies = new List[SHARD_COUNT];
+        for (int i = 0; i < SHARD_COUNT; i++) {
+            this.arrayOfLatencies[i] = Collections.synchronizedList(new ArrayList<>());
+        }
     }
 
     public void startOperation() {
@@ -16,19 +22,26 @@ public class MetricsCollector {
     }
 
     public void recordLatency(long latencyMs) {
-        latencies.add(latencyMs);
+        int randomIndex = ThreadLocalRandom.current().nextInt(SHARD_COUNT);
+        arrayOfLatencies[randomIndex].add(latencyMs);
     }
 
     public void endOperation(long latencyMs) {
-        latencies.add(latencyMs);
+        int randomIndex = ThreadLocalRandom.current().nextInt(SHARD_COUNT);
+        arrayOfLatencies[randomIndex].add(latencyMs);
     }
 
     public MetricsResult getResults() {
-        if (latencies.isEmpty()) {
+        List<Long> combined = new ArrayList<>();
+        for (List<Long> shard : arrayOfLatencies) {
+            combined.addAll(shard);
+        }
+        
+        if (combined.isEmpty()) {
             return new MetricsResult(0, 0, 0, 0, 0, 0, 0, 0, 0);
         }
 
-        List<Long> sorted = new ArrayList<>(latencies);
+        List<Long> sorted = new ArrayList<>(combined);
         Collections.sort(sorted);
 
         double p50 = percentile(sorted, 50);
@@ -39,7 +52,7 @@ public class MetricsCollector {
         long max = sorted.get(sorted.size() - 1);
 
         long totalDurationMs = endTime - startTime;
-        double throughput = totalDurationMs > 0 ? (latencies.size() * 1000.0) / totalDurationMs : 0;
+        double throughput = totalDurationMs > 0 ? (combined.size() * 1000.0) / totalDurationMs : 0;
 
         return new MetricsResult(p50, p95, p99, avg, min, max, throughput, 0, 0);
     }
@@ -59,6 +72,8 @@ public class MetricsCollector {
     }
 
     public void reset() {
-        latencies.clear();
+        for (List<Long> shard : arrayOfLatencies) {
+            shard.clear();
+        }
     }
 }
