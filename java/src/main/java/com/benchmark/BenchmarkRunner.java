@@ -462,7 +462,6 @@ public class BenchmarkRunner {
                     try {
                         semaphore.acquire();
                         long start = System.currentTimeMillis();
-                        // Fetch order to get first item ID, then update it
                         Order order = scenario.fetchOrder(orderId);
                         if (order != null && !order.getItems().isEmpty()) {
                             Item firstItem = order.getItems().get(0);
@@ -502,7 +501,6 @@ public class BenchmarkRunner {
                     try {
                         semaphore.acquire();
                         long start = System.currentTimeMillis();
-                        // Fetch order to get first item ID, then delete it
                         Order order = scenario.fetchOrder(orderId);
                         if (order != null && !order.getItems().isEmpty()) {
                             UUID itemId = order.getItems().get(0).getId();

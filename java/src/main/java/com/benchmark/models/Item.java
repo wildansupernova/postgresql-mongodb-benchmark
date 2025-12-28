@@ -73,7 +73,9 @@ public class Item {
 
     public void setQuantity(int quantity) {
         this.quantity = quantity;
-        this.amount = this.unitPrice.multiply(BigDecimal.valueOf(quantity));
+        if (this.unitPrice != null) {
+            this.amount = this.unitPrice.multiply(BigDecimal.valueOf(quantity));
+        }
     }
 
     public BigDecimal getUnitPrice() {

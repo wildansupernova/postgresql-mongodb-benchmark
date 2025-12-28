@@ -27,9 +27,9 @@ postgresql:
 benchmark:
   # Enabled scenarios - select which scenarios to run (default: all if not specified)
   # Options: scenario1, scenario2, scenario3, scenario4
-  enabled_scenarios: [scenario1, scenario2, scenario3, scenario4]
+  enabled_scenarios: [scenario4, scenario1]
   
-  scales: [medium]
+  scales: [small]
   
   custom_scales:
     micro:
