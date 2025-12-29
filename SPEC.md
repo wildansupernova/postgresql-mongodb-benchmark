@@ -169,7 +169,8 @@ This specification outlines the functional requirements for benchmarking MongoDB
 ### Validation
 - Post-operation checks: Verify total_amount calculations
 - Consistency audits: Ensure no data corruption after operations
-- Error handling: Graceful failure and recovery mechanisms
+- Error handling: All operations should implement retry logic with exponential backoff and jitter on exceptions; if all retries fail, the program should exit with an error
+- Graceful failure and recovery mechanisms
 
 ## Implementation Notes
 - Use official drivers: MongoDB Java driver, PostgreSQL JDBC driver
