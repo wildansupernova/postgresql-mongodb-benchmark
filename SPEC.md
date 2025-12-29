@@ -34,7 +34,7 @@ This specification outlines the functional requirements for benchmarking MongoDB
 
 ### Package Structure
 ```
-src/main/java/com/mrscrape/benchmark/
+src/main/java/com/databases/benchmark/
 ├── BenchmarkApp.java              # Main CLI application class
 ├── model/
 │   ├── Order.java                 # Order data model class
