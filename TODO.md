@@ -6,7 +6,7 @@ This is a sequential todo list for implementing the MongoDB 8 vs PostgreSQL 18 b
 - [ ] 1. Set up Gradle project structure - Create Java 25 project with Gradle, add dependencies for MongoDB Java driver, PostgreSQL JDBC, and any required libraries for virtual threads, CSV handling, and metrics collection.
 
 ## Data Models and Connections
-- [ ] 2. Define data models - Create Order and Item Java classes with fields matching the spec (order_id, customer_id, etc.), including serialization support for both MongoDB (BSON) and PostgreSQL (JSONB).
+- [ ] 2. Implement data models - Create Order and Item Java classes in the model/ package as outlined in SPEC.md Code Structure section, with Jackson annotations for JSON/BSON serialization support.
 - [ ] 3. Implement database connection utilities - Create connection classes for MongoDB and PostgreSQL with proper connection string parsing and error handling.
 
 ## Scenario 1 Implementation (Embedded Storage)

@@ -30,6 +30,60 @@ This specification outlines the functional requirements for benchmarking MongoDB
 - `total_amount` in Order must equal the sum of (`price` × `quantity`) for all associated Items
 - Relationship is one-to-many: Order → Items
 
+## Code Structure
+
+### Package Structure
+```
+src/main/java/com/mrscrape/benchmark/
+├── BenchmarkApp.java              # Main CLI application class
+├── model/
+│   ├── Order.java                 # Order data model class
+│   └── Item.java                  # Item data model class
+├── db/
+│   ├── DatabaseOperations.java    # Interface for database operations
+│   ├── MongoConnection.java       # MongoDB connection utilities
+│   ├── PostgresConnection.java    # PostgreSQL connection utilities
+│   ├── scenario1/
+│   │   ├── MongoEmbeddedOps.java  # Scenario 1 MongoDB operations
+│   │   └── PostgresJsonbOps.java  # Scenario 1 PostgreSQL operations
+│   └── scenario2/
+│       ├── MongoMultiDocOps.java # Scenario 2 MongoDB operations
+│       └── PostgresMultiTableOps.java # Scenario 2 PostgreSQL operations
+├── concurrency/
+│   └── VirtualThreadExecutor.java # Virtual thread concurrency framework
+├── metrics/
+│   ├── MetricsCollector.java      # Metrics collection and timing
+│   └── CsvOutput.java            # CSV output for measurement and aggregation
+└── config/
+    └── BenchmarkConfig.java       # Configuration and command-line parsing
+```
+
+### Key Classes Overview
+
+#### BenchmarkApp.java
+- Main entry point with PicoCLI annotations for command-line parsing
+- Orchestrates the benchmark execution flow
+- Handles mode selection (measurement vs aggregation)
+
+#### Data Models (model/)
+- **Order.java**: Represents order entity with Jackson annotations for JSON/BSON serialization
+- **Item.java**: Represents item entity with Jackson annotations for JSON/BSON serialization
+
+#### Database Operations (db/)
+- **DatabaseOperations.java**: Interface defining contract for all database operations (insert, query, update-modify, update-add, delete)
+- Connection classes handle database-specific connection management
+- Scenario-specific operation classes implement the DatabaseOperations interface
+
+#### Concurrency (concurrency/)
+- **VirtualThreadExecutor.java**: Manages Java 25 virtual threads with bounded concurrency limits
+
+#### Metrics and Output (metrics/)
+- **MetricsCollector.java**: Collects timing and throughput metrics for operations
+- **CsvOutput.java**: Handles CSV writing for measurement mode and aggregation mode
+
+#### Configuration (config/)
+- **BenchmarkConfig.java**: Command-line argument parsing and validation
+
 ## Benchmarking Scenarios
 
 ### Scenario 1: Embedded Storage
