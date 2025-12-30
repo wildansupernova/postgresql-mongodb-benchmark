@@ -1,35 +1,38 @@
-# Results directory (except .gitkeep)
-results/*
-!results/.gitkeep
-
-# Build directories
-java/build/
-java/.gradle/
-java/target/
+# Gradle
+.gradle/
+build/
+dist/
+*.jar
+*.war
 
 # IDE
 .idea/
 .vscode/
 *.iml
+*.iws
+*.ipr
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Benchmark results and logs
+benchmark_results/
+benchmark.log
+*.log
+
+# Docker and database
+.env
+docker-compose.override.yml
 
 # OS
 .DS_Store
 Thumbs.db
 
-# Logs
-*.log
-logs/
-
-# Docker volumes
-docker/*/data/
-
-# Environment files
-.env
-.env.local
-
-# Temporary files
-*.tmp
-*.temp
-*.swp
-*.swo
-*~
+# Misc
+*.pid
+target/
+.classpath
+.project
+.settings/
+bin/

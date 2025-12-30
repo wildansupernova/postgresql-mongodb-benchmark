@@ -1,0 +1,68 @@
+plugins {
+    id 'java'
+    id 'application'
+}
+
+group = 'com.mrscrape'
+version = '1.0.0'
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(25)
+    }
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    // MongoDB Java Driver
+    implementation 'org.mongodb:mongodb-driver-sync:5.1.0'
+    implementation 'org.mongodb:mongodb-driver-core:5.1.0'
+
+    // PostgreSQL JDBC Driver
+    implementation 'org.postgresql:postgresql:42.7.1'
+
+    // HikariCP Connection Pool for PostgreSQL
+    implementation 'com.zaxxer:HikariCP:5.1.0'
+
+    // Jackson for JSON/BSON serialization
+    implementation 'com.fasterxml.jackson.core:jackson-databind:2.17.0'
+    implementation 'com.fasterxml.jackson.datatype:jackson-datatype-jsr310:2.17.0'
+
+    // PicoCLI for command-line parsing
+    implementation 'info.picocli:picocli:4.7.5'
+    annotationProcessor 'info.picocli:picocli-codegen:4.7.5'
+
+    // Logging
+    implementation 'org.slf4j:slf4j-api:2.0.11'
+    implementation 'ch.qos.logback:logback-classic:1.5.3'
+
+    // Testing (optional, not used per requirements)
+    testImplementation 'junit:junit:4.13.2'
+}
+
+application {
+    mainClass = 'com.mrscrape.benchmark.BenchmarkApp'
+}
+
+jar {
+    manifest {
+        attributes 'Main-Class': 'com.mrscrape.benchmark.BenchmarkApp'
+    }
+    duplicatesStrategy = 'exclude'
+    from {
+        configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) }
+    }
+}
+
+tasks.named('compileJava') {
+    doFirst {
+        def genDir = new File(buildDir, 'generated/sources/annotationProcessor/java')
+        def nativeImageDir = new File(genDir, 'META-INF/native-image/picocli-generated')
+        if (!nativeImageDir.exists()) {
+            nativeImageDir.mkdirs()
+        }
+    }
+}

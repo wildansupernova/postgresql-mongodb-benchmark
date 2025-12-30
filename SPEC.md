@@ -1,792 +1,362 @@
-# MongoDB vs PostgreSQL Relationship Benchmark Specification
+# Benchmark Specification: MongoDB 8 vs PostgreSQL 18
 
-## 1. Overview
+## Overview
+This specification outlines the functional requirements for benchmarking MongoDB 8 and PostgreSQL 18 in a scenario involving orders and items. The benchmark will compare performance, consistency, and transactional behavior across two architectural approaches:
 
-This benchmark compares the performance of MongoDB and PostgreSQL when handling one-to-many relationships (Order has many Items) under different architectural patterns.
+1. **Embedded vs. JSON/BSON Storage**: Single document/row with embedded data
+2. **Multi-Document/Table with Transactions**: Separate collections/tables with transactional integrity
 
-**Primary Focus**: Measure performance differences when adding/updating related items to an order.
+## Entities and Relationships
 
-## 2. Benchmark Scenarios
+### Order
+- **Fields**:
+  - `order_id`: Unique identifier (string or UUID)
+  - `customer_id`: Identifier for the customer (string)
+  - `order_date`: Timestamp of order creation
+  - `total_amount`: Calculated sum of (price × quantity) for all items in the order
+  - `status`: Order status (e.g., "pending", "completed", "cancelled")
 
-### Scenario 1: MongoDB Embedded Document vs PostgreSQL JSONB
-- **MongoDB**: Single document containing order with embedded array of items
-- **PostgreSQL**: Single row with order data and JSONB column containing array of items
-- **Pattern**: Denormalized, single-document/row approach
+### Item
+- **Fields**:
+  - `item_id`: Unique identifier (string or UUID)
+  - `order_id`: Reference to the parent order
+  - `product_id`: Identifier for the product (string)
+  - `name`: Product name (string)
+  - `price`: Unit price (decimal/float)
+  - `quantity`: Number of units (integer)
 
-### Scenario 2: MongoDB Embedded Document vs PostgreSQL Multi-Table with Transactions
-- **MongoDB**: Single document containing order with embedded array of items
-- **PostgreSQL**: Normalized schema with separate tables (orders and items) using foreign keys, wrapped in transactions
-- **Pattern**: MongoDB denormalized vs PostgreSQL normalized
+### Relationship
+- An Order contains exactly 10 Items (fixed for benchmark consistency)
+- `total_amount` in Order must equal the sum of (`price` × `quantity`) for all associated Items
+- Relationship is one-to-many: Order → Items
 
-### Scenario 3: MongoDB Multi-Collection vs PostgreSQL JSONB
-- **MongoDB**: Separate collections for orders and items with references, wrapped in multi-document transactions
-- **PostgreSQL**: Single row with order data and JSONB column containing array of items
-- **Pattern**: MongoDB normalized vs PostgreSQL denormalized
+## Code Structure
 
-### Scenario 4: MongoDB Multi-Collection vs PostgreSQL Multi-Table with Transactions
-- **MongoDB**: Separate collections for orders and items with references, wrapped in multi-document transactions
-- **PostgreSQL**: Normalized schema with separate tables (orders and items) using foreign keys, wrapped in transactions
-- **Pattern**: Both normalized with transactions
-
-## 3. Test Operations
-
-Each scenario will benchmark the following operations:
-
-### 3.1 Write Operations
-1. **INSERT**: Create new order with N initial items
-2. **APPEND**: Add M new items to existing order
-3. **UPDATE**: Modify existing item within order
-4. **DELETE**: Remove item from order
-5. **BATCH INSERT**: Create K orders, each with N items
-
-### 3.2 Read Operations
-1. **FETCH_ORDER**: Retrieve order with all items
-2. **FETCH_FILTERED**: Retrieve order with filtered items (e.g., where item.status = 'active')
-3. **COUNT**: Count total items for order
-4. **AGGREGATE**: Perform aggregation on items (e.g., sum amounts, calculate order total)
-5. **BATCH_FETCH**: Retrieve multiple orders with their items
-
-### 3.3 Execution Order
-To ensure fair comparison:
-1. Run **ALL** operations on PostgreSQL first (complete dataset)
-2. Run **ALL** operations on MongoDB second (complete dataset)
-3. This prevents database-specific caching effects from influencing results
-
-## 4. Data Model
-
-### Order Entity
+### Package Structure
 ```
-- id: string/UUID
-- customer_name: string
-- customer_email: string
-- amount: decimal (computed as sum of item amounts)
-- status: string (enum: pending, processing, completed, cancelled)
-- created_at: timestamp
-- updated_at: timestamp
-- metadata: map/object (shipping address, payment info, etc.)
+src/main/java/com/mrscrape/benchmark/
+├── BenchmarkApp.java              # Main CLI application class
+├── model/
+│   ├── Order.java                 # Order data model class
+│   └── Item.java                  # Item data model class
+├── db/
+│   ├── DatabaseOperations.java    # Interface for database operations
+│   ├── MongoConnection.java       # MongoDB connection utilities
+│   ├── PostgresConnection.java    # PostgreSQL connection utilities
+│   ├── scenario1/
+│   │   ├── MongoEmbeddedOps.java  # Scenario 1 MongoDB operations
+│   │   └── PostgresJsonbOps.java  # Scenario 1 PostgreSQL operations
+│   └── scenario2/
+│       ├── MongoMultiDocOps.java # Scenario 2 MongoDB operations
+│       └── PostgresMultiTableOps.java # Scenario 2 PostgreSQL operations
+├── concurrency/
+│   └── VirtualThreadExecutor.java # Virtual thread concurrency framework
+├── metrics/
+│   ├── MetricsCollector.java      # Metrics collection and timing
+│   └── CsvOutput.java            # CSV output for measurement and aggregation
+└── config/
+    └── BenchmarkConfig.java       # Configuration and command-line parsing
 ```
 
-### Item Entity
-```
-- id: string/UUID
-- order_id: string/UUID (for normalized schemas)
-- product_name: string
-- product_sku: string
-- quantity: integer
-- unit_price: decimal
-- amount: decimal (quantity * unit_price)
-- status: string (enum: pending, shipped, delivered, returned)
-- tags: array of strings (e.g., fragile, perishable)
-- created_at: timestamp
-```
-
-## 5. Test Data Scale
-
-Test data is fully configurable via the config file. Below are recommended presets:
-
-### Preset: Small Scale
-- 1,000 orders
-- 10-50 items per order (uniform distribution)
-- Total: ~30,000 items
-
-### Preset: Medium Scale
-- 10,000 orders
-- 10-100 items per order (uniform distribution)
-- Total: ~500,000 items
-
-### Preset: Large Scale
-- 100,000 orders
-- 10-200 items per order (uniform distribution)
-- Total: ~10,000,000 items
-
-### Custom Scale Configuration
-Users can define custom scales with granular parameters:
-- **order_count**: Number of orders to create
-- **items_per_order_min**: Minimum items per order
-- **items_per_order_max**: Maximum items per order
-- **items_distribution**: Distribution type (uniform, normal, zipfian)
-- **unit_price_min**: Minimum item unit price
-- **unit_price_max**: Maximum item unit price
-- **quantity_min**: Minimum item quantity
-- **quantity_max**: Maximum item quantity
-- **hot_orders_percentage**: Percentage of orders that will be accessed more frequently (for Zipfian distribution)
-- **hot_orders_access_ratio**: How much more frequently hot orders are accessed (e.g., 80 means 80% of access goes to hot orders)
-
-## 6. Performance Metrics
-
-For each operation, measure:
-
-1. **Latency**
-   - p50 (median)
-   - p95
-   - p99
-   - Average
-   - Min/Max
-
-2. **Throughput**
-   - Operations per second (ops/sec)
-   - Records per second
-
-3. **Resource Utilization**
-   - CPU usage (%)
-   - Memory usage (MB)
-   - Disk I/O (MB/s)
-   - Network I/O (for writes/reads)
-
-4. **Database Metrics**
-   - Storage size (MB)
-   - Index size (MB)
-   - Query execution time
-   - Connection pool utilization
-
-## 7. Fair Benchmarking Methodology
-
-### 7.1 Environment Consistency
-- Run all tests on identical hardware (same CPU, RAM, disk)
-- Use Docker containers with resource limits:
-  - MongoDB: Single-member replica set (2 CPUs, 3GB RAM)
-  - PostgreSQL: 2 CPUs, 3GB RAM
-  - Disk: SSD with similar IOPS
-- Note: Single-member replica set enables multi-document transactions while maintaining fair resource comparison
-
-### 7.2 Database Configuration
-- **MongoDB**: 
-  - WiredTiger storage engine
-  - Write concern: majority
-  - Read concern: majority
-  - Single-member replica set deployment (enables multi-document transactions for all scenarios)
-  - Transaction options: readConcern=majority, writeConcern=majority
-  - Appropriate indexes on query fields
-  
-- **PostgreSQL**: 
-  - Default configuration optimized for workload
-  - JSONB GIN indexes where applicable
-  - B-tree indexes on foreign keys and query fields
-  - Appropriate connection pool size
-
-### 7.3 Test Execution
-- Warm-up phase before measurement (configurable number of operations)
-- Each test runs for exactly the specified number of operations
-- Repeat each test multiple times and report average (configurable)
-- Run tests in random order to avoid bias
-- Clear caches between test runs
-- Connection pooling size configurable per workload
-
-### 7.4 Data Distribution
-- Use realistic data distribution (Zipfian for hot records)
-- Ensure even distribution across shards/partitions
-- Pre-populate databases with initial data before testing
-
-### 7.5 Concurrency Testing
-Test with different concurrency levels:
-- 1 thread (baseline)
-- 10 threads
-- 50 threads
-- 100 threads
-
-## 8. Implementation Stack
-
-The benchmark supports multiple language implementations for flexibility and comparison.
-
-### 8.0 Supported Languages
-- **Java 25** (with Virtual Threads) - Primary implementation
-- **Go** - Alternative implementation
-
-### 8.1 Dependencies
-
-#### Java 25 Dependencies (Gradle)
-```gradle
-plugins {
-    id 'java'
-    id 'application'
-}
-
-java {
-    toolchain {
-        languageVersion = JavaLanguageVersion.of(25)
-    }
-}
-
-application {
-    mainClass = 'com.benchmark.BenchmarkRunner'
-}
-
-repositories {
-    mavenCentral()
-}
-
-dependencies {
-    // MongoDB
-    implementation 'org.mongodb:mongodb-driver-sync:5.1.0'
-    
-    // PostgreSQL
-    implementation 'org.postgresql:postgresql:42.7.1'
-    implementation 'com.zaxxer:HikariCP:5.1.0'
-    
-    // JSON Processing
-    implementation 'com.fasterxml.jackson.core:jackson-databind:2.16.1'
-    
-    // Benchmarking
-    implementation 'org.openjdk.jmh:jmh-core:1.37'
-    annotationProcessor 'org.openjdk.jmh:jmh-generator-annprocess:1.37'
-    
-    // Utilities
-    implementation 'com.github.javafaker:javafaker:1.0.2'
-    
-    // YAML Configuration
-    implementation 'org.yaml:snakeyaml:2.2'
-    
-    // Logging
-    implementation 'ch.qos.logback:logback-classic:1.4.14'
-}
-```
-
-#### Go Dependencies
-```go
-// MongoDB
-- go.mongodb.org/mongo-driver/mongo (official driver)
-
-// PostgreSQL
-- github.com/jackc/pgx/v5 (high-performance driver)
-
-// Benchmarking
-- testing package (Go standard)
-- github.com/prometheus/client_golang (metrics)
-
-// Utilities
-- github.com/google/uuid (UUID generation)
-- github.com/brianvoe/gofakeit/v6 (test data generation)
-```
-
-### 8.2 Project Structure
-```
-/java
-  build.gradle - Java project dependencies
-  settings.gradle - Gradle settings
-  /src
-    /main
-      /java
-        /com/benchmark
-          /scenarios
-            /scenario1 - Embedded vs JSONB
-              /mongodb - MongoDB embedded implementation
-              /postgresql - PostgreSQL JSONB implementation
-            /scenario2 - Embedded vs Normalized
-              /mongodb - MongoDB embedded implementation
-              /postgresql - PostgreSQL normalized implementation
-            /scenario3 - Multi-collection vs JSONB
-              /mongodb - MongoDB multi-collection implementation
-              /postgresql - PostgreSQL JSONB implementation
-            /scenario4 - Multi-collection vs Normalized
-              /mongodb - MongoDB multi-collection implementation
-              /postgresql - PostgreSQL normalized implementation
-          /models
-            Order.java
-            Item.java
-          /testdata - Data generators
-          /metrics - Performance metric collectors
-          /config - Configuration management
-          BenchmarkRunner.java - Main entry point
-      /resources
-        config.yaml
-        logback.xml
-/go
-  /cmd
-    /benchmark - Main benchmark runner
-  /scenarios
-    /scenario1-embedded-vs-jsonb
-      /mongodb - Embedded document implementation
-      /postgresql - JSONB implementation
-    /scenario2-embedded-vs-normalized
-      /mongodb - Embedded document implementation
-      /postgresql - Normalized multi-table with transactions
-    /scenario3-multicollection-vs-jsonb
-      /mongodb - Multi-collection with transactions implementation
-      /postgresql - JSONB implementation
-    /scenario4-multicollection-vs-normalized
-      /mongodb - Multi-collection with transactions implementation
-      /postgresql - Normalized multi-table with transactions
-      /docker-compose.yml - Database setup for this scenario
-  /internal
-    /testdata - Data generators
-    /metrics - Performance metric collectors
-    /config - Configuration management
-/docker
-  /scenario1 - Docker compose for scenario 1
-  /scenario2 - Docker compose for scenario 2
-  /scenario3 - Docker compose for scenario 3
-  /scenario4 - Docker compose for scenario 4
-  init-postgres.sql - PostgreSQL initialization script
-/results - Benchmark results output
-/scripts - Setup and utility scripts
-```
-
-### 8.3 Docker Compose Setup
-
-All scenarios use the same Docker Compose setup with a single-member MongoDB replica set.
-
-#### Docker Compose (All Scenarios)
-```yaml
-version: '3.8'
-services:
-  mongodb:
-    image: mongo:7.0
-    container_name: benchmark-mongo
-    command: ["--replSet", "rs0", "--bind_ip_all"]
-    ports:
-      - "27017:27017"
-    environment:
-      MONGO_INITDB_DATABASE: benchmark_db
-    volumes:
-      - mongo-data:/data/db
-      - ./docker/init-mongo.sh:/docker-entrypoint-initdb.d/init-mongo.sh
-    deploy:
-      resources:
-        limits:
-          cpus: '2'
-          memory: 3G
-    healthcheck:
-      test: |
-        mongosh --eval 'db.runCommand("ping").ok' --quiet
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  mongo-init:
-    image: mongo:7.0
-    container_name: benchmark-mongo-init
-    depends_on:
-      mongodb:
-        condition: service_healthy
-    command: >
-      bash -c "
-        sleep 5 &&
-        mongosh --host mongodb:27017 --eval '
-          rs.initiate({
-            _id: \"rs0\",
-            members: [{ _id: 0, host: \"localhost:27017\" }]
-          })' &&
-        echo \"Replica set initiated\" &&
-        mongosh --host mongodb:27017 --eval 'rs.status()'
-      "
-    restart: "no"
-
-  postgres:
-    image: postgres:16
-    container_name: benchmark-postgres
-    ports:
-      - "5432:5432"
-    environment:
-      POSTGRES_DB: benchmark_db
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-    volumes:
-      - postgres-data:/var/lib/postgresql/data
-      - ./docker/init-postgres.sql:/docker-entrypoint-initdb.d/init.sql
-    deploy:
-      resources:
-        limits:
-          cpus: '2'
-          memory: 3G
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-volumes:
-  mongo-data:
-  postgres-data:
-```
-
-### 8.4 Database Initialization Scripts
-
-#### PostgreSQL Init Script (docker/init-postgres.sql)
-```sql
--- For Scenario 1 & 3 (JSONB)
-CREATE TABLE IF NOT EXISTS orders_jsonb (
-    id UUID PRIMARY KEY,
-    customer_name VARCHAR(255) NOT NULL,
-    customer_email VARCHAR(255) NOT NULL,
-    amount DECIMAL(12, 2) NOT NULL DEFAULT 0,
-    status VARCHAR(50) NOT NULL,
-    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
-    metadata JSONB,
-    items JSONB NOT NULL DEFAULT '[]'::jsonb
-);
-
-CREATE INDEX idx_orders_jsonb_items ON orders_jsonb USING GIN (items);
-CREATE INDEX idx_orders_jsonb_status ON orders_jsonb(status);
-
--- For Scenario 2 & 4 (Normalized)
-CREATE TABLE IF NOT EXISTS orders_normalized (
-    id UUID PRIMARY KEY,
-    customer_name VARCHAR(255) NOT NULL,
-    customer_email VARCHAR(255) NOT NULL,
-    amount DECIMAL(12, 2) NOT NULL DEFAULT 0,
-    status VARCHAR(50) NOT NULL,
-    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
-    metadata JSONB
-);
-
-CREATE TABLE IF NOT EXISTS items_normalized (
-    id UUID PRIMARY KEY,
-    order_id UUID NOT NULL REFERENCES orders_normalized(id) ON DELETE CASCADE,
-    product_name VARCHAR(255) NOT NULL,
-    product_sku VARCHAR(100) NOT NULL,
-    quantity INTEGER NOT NULL,
-    unit_price DECIMAL(10, 2) NOT NULL,
-    amount DECIMAL(12, 2) NOT NULL,
-    status VARCHAR(50) NOT NULL,
-    tags TEXT[],
-    created_at TIMESTAMP NOT NULL DEFAULT NOW()
-);
-
-CREATE INDEX idx_items_order_id ON items_normalized(order_id);
-CREATE INDEX idx_items_status ON items_normalized(status);
-CREATE INDEX idx_items_product_sku ON items_normalized(product_sku);
-
--- Trigger to update order amount when items change
-CREATE OR REPLACE FUNCTION update_order_amount()
-RETURNS TRIGGER AS $$
-BEGIN
-    UPDATE orders_normalized
-    SET amount = (
-        SELECT COALESCE(SUM(amount), 0)
-        FROM items_normalized
-        WHERE order_id = COALESCE(NEW.order_id, OLD.order_id)
-    ),
-    updated_at = NOW()
-    WHERE id = COALESCE(NEW.order_id, OLD.order_id);
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE TRIGGER trigger_update_order_amount
-AFTER INSERT OR UPDATE OR DELETE ON items_normalized
-FOR EACH ROW
-EXECUTE FUNCTION update_order_amount();
-```
-
-#### MongoDB Initialization Script (docker/init-mongo.sh)
-```bash
-#!/bin/bash
-set -e
-
-echo "Waiting for MongoDB to be ready..."
-sleep 10
-
-# Wait for replica set to be ready
-until mongosh --eval "print('MongoDB is ready')" > /dev/null 2>&1; do
-  sleep 2
-done
-
-echo "Creating indexes for benchmark scenarios..."
-
-mongosh <<EOF
-use benchmark_db;
-
-// Scenario 1 & 2: Embedded documents collection
-db.createCollection("orders_embedded");
-db.orders_embedded.createIndex({ "customer_email": 1 });
-db.orders_embedded.createIndex({ "status": 1 });
-db.orders_embedded.createIndex({ "created_at": -1 });
-db.orders_embedded.createIndex({ "items.status": 1 });
-db.orders_embedded.createIndex({ "items.product_sku": 1 });
-
-// Scenario 3 & 4: Normalized collections
-db.createCollection("orders_normalized");
-db.createCollection("items_normalized");
-
-// Orders collection indexes
-db.orders_normalized.createIndex({ "customer_email": 1 });
-db.orders_normalized.createIndex({ "status": 1 });
-db.orders_normalized.createIndex({ "created_at": -1 });
-
-// Items collection indexes
-db.items_normalized.createIndex({ "order_id": 1 });
-db.items_normalized.createIndex({ "status": 1 });
-db.items_normalized.createIndex({ "product_sku": 1 });
-db.items_normalized.createIndex({ "order_id": 1, "status": 1 });
-
-print("MongoDB indexes created successfully");
-EOF
-
-echo "MongoDB initialization complete"
-```
-
-### 8.5 Indexing Strategy by Scenario
-
-#### Scenario 1: MongoDB Embedded vs PostgreSQL JSONB
-**MongoDB Indexes:**
-- `{ "customer_email": 1 }` - For customer lookups
-- `{ "status": 1 }` - For filtering orders by status
-- `{ "created_at": -1 }` - For time-based queries
-- `{ "items.status": 1 }` - For filtering items within embedded array
-- `{ "items.product_sku": 1 }` - For product lookups within items
-
-**PostgreSQL Indexes:**
-- GIN index on `items` JSONB column - For efficient JSONB queries
-- B-tree index on `status` - For order status filtering
-
-#### Scenario 2: MongoDB Embedded vs PostgreSQL Normalized
-**MongoDB Indexes:**
-- Same as Scenario 1 (embedded document pattern)
-
-**PostgreSQL Indexes:**
-- B-tree index on `items_normalized.order_id` - For join operations
-- B-tree index on `items_normalized.status` - For item filtering
-- B-tree index on `items_normalized.product_sku` - For product lookups
-
-#### Scenario 3: MongoDB Multi-Collection vs PostgreSQL JSONB
-**MongoDB Indexes:**
-- Orders collection: Same as above (customer_email, status, created_at)
-- Items collection:
-  - `{ "order_id": 1 }` - Critical for join operations
-  - `{ "status": 1 }` - For filtering items
-  - `{ "product_sku": 1 }` - For product lookups
-  - `{ "order_id": 1, "status": 1 }` - Compound index for common queries
-
-**PostgreSQL Indexes:**
-- Same as Scenario 1 (JSONB pattern)
-
-#### Scenario 4: MongoDB Multi-Collection vs PostgreSQL Normalized
-**MongoDB Indexes:**
-- Same as Scenario 3 (multi-collection pattern)
-
-**PostgreSQL Indexes:**
-- Same as Scenario 2 (normalized pattern)
-
-### 8.7 Configuration File (config.yaml)
-```yaml
-scenarios:
-  scenario1:
-    name: "Embedded vs JSONB"
-    mongodb_uri: "mongodb://localhost:27017/?replicaSet=rs0"
-    postgres_host: "localhost:5432"
-  scenario2:
-    name: "Embedded vs Normalized"
-    mongodb_uri: "mongodb://localhost:27017/?replicaSet=rs0"
-    postgres_host: "localhost:5432"
-  scenario3:
-    name: "Multi-Collection vs JSONB"
-    mongodb_uri: "mongodb://localhost:27017/?replicaSet=rs0"
-    postgres_host: "localhost:5432"
-  scenario4:
-    name: "Multi-Collection vs Normalized"
-    mongodb_uri: "mongodb://localhost:27017/?replicaSet=rs0"
-    postgres_host: "localhost:5432"
-
-mongodb:
-  database: "benchmark_db"
-  
-postgresql:
-  database: "benchmark_db"
-  user: "postgres"
-  password: "postgres"
-  
-benchmark:
-  # Enabled scenarios - select which scenarios to run (default: all)
-  # Options: scenario1, scenario2, scenario3, scenario4
-  enabled_scenarios: [scenario1, scenario2]
-  
-  # Predefined scales (can use: small, medium, large, or custom)
-  scales: [small, medium, large]
-  
-  # Custom scale definitions (overrides presets if defined)
-  custom_scales:
-    small:
-      order_count: 1000
-      items_per_order_min: 10
-      items_per_order_max: 50
-      items_distribution: "uniform"  # uniform, normal, zipfian
-      unit_price_min: 10.00
-      unit_price_max: 1000.00
-      quantity_min: 1
-      quantity_max: 10
-      hot_orders_percentage: 20  # for zipfian distribution
-      hot_orders_access_ratio: 80  # 80% of operations target 20% of orders
-    
-    medium:
-      order_count: 10000
-      items_per_order_min: 10
-      items_per_order_max: 100
-      items_distribution: "uniform"
-      unit_price_min: 10.00
-      unit_price_max: 1000.00
-      quantity_min: 1
-      quantity_max: 10
-      hot_orders_percentage: 20
-      hot_orders_access_ratio: 80
-    
-    large:
-      order_count: 100000
-      items_per_order_min: 10
-      items_per_order_max: 200
-      items_distribution: "normal"  # normal distribution around mean
-      unit_price_min: 10.00
-      unit_price_max: 1000.00
-      quantity_min: 1
-      quantity_max: 10
-      hot_orders_percentage: 10
-      hot_orders_access_ratio: 90
-    
-    # Example: Custom micro scale for quick testing
-    micro:
-      order_count: 100
-      items_per_order_min: 5
-      items_per_order_max: 20
-      items_distribution: "uniform"
-      unit_price_min: 10.00
-      unit_price_max: 100.00
-      quantity_min: 1
-      quantity_max: 5
-      hot_orders_percentage: 0
-      hot_orders_access_ratio: 0
-  
-  # Operation mix (percentage of each operation type during mixed workload)
-  operation_mix:
-    insert: 10
-    append: 30
-    update: 25
-    delete: 5
-    fetch_order: 15
-    fetch_filtered: 10
-    aggregate: 5
-  
-  # Operation-specific parameters
-  operations:
-    append:
-      items_to_add_min: 1
-      items_to_add_max: 10
-    batch_insert:
-      batch_size_min: 10
-      batch_size_max: 100
-    batch_fetch:
-      batch_size_min: 10
-      batch_size_max: 100
-    fetch_filtered:
-      filter_selectivity: 0.3  # 30% of items match filter
-  
-  # Concurrency and execution parameters
-  concurrency_levels: [1, 10, 50, 100]
-  iterations: 5
-  warmup_operations: 1000
-  total_operations: 10000  # Exact number of operations to run per test
-  
-  # Connection pool settings
-  connection_pool:
-    min_size: 10
-    max_size: 50
-    connection_timeout_ms: 5000
-    idle_timeout_ms: 30000
-  
-  # Metrics collection
-  metrics:
-    collect_cpu: true
-    collect_memory: true
-    collect_disk_io: true
-    collect_network_io: true
-    sampling_interval_ms: 1000
-    enable_query_profiling: true
-```
-
-## 9. Output Format
-
-Results should be output in a **single combined file** showing side-by-side comparison of PostgreSQL and MongoDB for each operation.
-
-### Output Formats
-1. **CSV** - For detailed analysis
-2. **JSON** - For programmatic processing
-3. **Markdown Tables** - For README documentation
-4. **Charts** - Performance comparison graphs (optional)
-
-### Sample CSV Output Structure
-```csv
-operation,metric,postgresql,mongodb
-insert,throughput_ops_sec,850,920
-insert,p50_ms,8.5,7.2
-insert,p95_ms,25.3,18.4
-insert,p99_ms,45.6,32.1
-insert,avg_ms,10.2,8.9
-insert,min_ms,2.1,1.8
-insert,max_ms,125.3,98.7
-insert,cpu_percent,42,38
-insert,memory_mb,512,480
-append,throughput_ops_sec,780,890
-append,p50_ms,10.2,8.1
-append,p95_ms,32.5,22.8
-append,p99_ms,58.4,41.2
-...
-```
-
-### Sample Markdown Table Output
-```markdown
-| Operation | Metric | PostgreSQL | MongoDB |
-|-----------|--------|------------|---------|
-| insert | throughput_ops_sec | 850 | 920 |
-| insert | p50_ms | 8.5 | 7.2 |
-| insert | p95_ms | 25.3 | 18.4 |
-| insert | p99_ms | 45.6 | 32.1 |
-| append | throughput_ops_sec | 780 | 890 |
-| append | p50_ms | 10.2 | 8.1 |
-```
-
-### Sample JSON Output Structure
-```json
-{
-  "scenario": "embedded_vs_jsonb",
-  "scale": "medium",
-  "concurrency": 10,
-  "timestamp": "2024-01-15T10:30:00Z",
-  "operations": {
-    "insert": {
-      "postgresql": {
-        "throughput_ops_sec": 850,
-        "latency_p50_ms": 8.5,
-        "latency_p95_ms": 25.3,
-        "latency_p99_ms": 45.6,
-        "latency_avg_ms": 10.2,
-        "latency_min_ms": 2.1,
-        "latency_max_ms": 125.3,
-        "cpu_percent": 42,
-        "memory_mb": 512
-      },
-      "mongodb": {
-        "throughput_ops_sec": 920,
-        "latency_p50_ms": 7.2,
-        "latency_p95_ms": 18.4,
-        "latency_p99_ms": 32.1,
-        "latency_avg_ms": 8.9,
-        "latency_min_ms": 1.8,
-        "latency_max_ms": 98.7,
-        "cpu_percent": 38,
-        "memory_mb": 480
+### Key Classes Overview
+
+#### BenchmarkApp.java
+- Main entry point with PicoCLI annotations for command-line parsing
+- Orchestrates the benchmark execution flow
+- Handles mode selection (measurement vs aggregation)
+
+#### Data Models (model/)
+- **Order.java**: Represents order entity with Jackson annotations for JSON/BSON serialization
+- **Item.java**: Represents item entity with Jackson annotations for JSON/BSON serialization
+
+#### Database Operations (db/)
+- **DatabaseOperations.java**: Interface defining contract for all database operations (insert, query, update-modify, update-add, delete)
+- Connection classes handle database-specific connection management
+- Scenario-specific operation classes implement the DatabaseOperations interface
+
+#### Concurrency (concurrency/)
+- **VirtualThreadExecutor.java**: Manages Java 25 virtual threads with bounded concurrency limits
+
+#### Metrics and Output (metrics/)
+- **MetricsCollector.java**: Collects timing and throughput metrics for operations
+- **CsvOutput.java**: Handles CSV writing for measurement mode and aggregation mode
+
+#### Configuration (config/)
+- **BenchmarkConfig.java**: Command-line argument parsing and validation
+
+## Benchmarking Scenarios
+
+### Scenario 1: Embedded Storage
+- **MongoDB**: Single document per order with items embedded as an array
+- **PostgreSQL**: Single row per order with items stored as BSON/JSON in a column
+- **Operations**:
+  - Insert: Create order with embedded items, calculate and store total_amount
+  - Update: Modify item quantities/prices, recalculate total_amount atomically
+  - Update: Add 5 items to an order, recalculate total_amount atomically
+  - Query: Retrieve order with all items, validate total_amount consistency
+  - Delete: Remove order and all associated items
+
+#### Schema
+- **MongoDB**:
+  ```json
+  {
+    "_id": "order_id",
+    "customer_id": "string",
+    "order_date": "timestamp",
+    "total_amount": "big integer",
+    "status": "string",
+    "items": [
+      {
+        "item_id": "string",
+        "product_id": "string",
+        "name": "string",
+        "price": "big integer",
+        "quantity": "big integer"
       }
-    },
-    "append": {
-      "postgresql": {...},
-      "mongodb": {...}
-    }
+    ]
   }
-}
-```
+  ```
+- **PostgreSQL**:
+  ```sql
+  CREATE TABLE orders (
+    order_id VARCHAR PRIMARY KEY,
+    customer_id VARCHAR,
+    order_date TIMESTAMP,
+    total_amount BIGINT,
+    status VARCHAR,
+    items JSONB
+  );
+  ```
+  *Note: No triggers used; total_amount calculation handled atomically in application code.*
 
-## 10. Success Criteria
+#### Indexes
+- **MongoDB**: Default index on `_id` (order_id) for retrieving orders by ID.
+- **PostgreSQL**: Primary key index on `order_id` for retrieving orders by ID.
 
-The benchmark is successful when:
-1. All scenarios complete without errors
-2. Results are reproducible (variance < 10% across runs)
-3. Resource utilization stays within limits
-4. Clear performance patterns emerge for each scenario
-5. Results provide actionable insights for architecture decisions
+### Scenario 2: Multi-Document/Table with Transactions
+- **MongoDB**: Separate collections for orders and items, use multi-document transactions
+- **PostgreSQL**: Separate tables for orders and items, use ACID transactions
+- **Operations**:
+  - Insert: Create order, then create 10 items, calculate and store total_amount (transactional)
+  - Update: Modify items, recalculate total_amount (transactional)
+  - Update: Add 5 items to an order, recalculate total_amount (transactional)
+  - Query: **JOIN/AGGREGATE** order with items using aggregation pipeline ($lookup) or SQL JOIN, validate total_amount consistency
+  - Delete: Remove order and items (transactional)
 
-## 11. Deliverables
+#### Schema
+- **MongoDB**:
+  - Orders collection:
+    ```json
+    {
+      "_id": "order_id",
+      "customer_id": "string",
+      "order_date": "timestamp",
+      "total_amount": "big integer",
+      "status": "string"
+    }
+    ```
+  - Items collection:
+    ```json
+    {
+      "_id": "item_id",
+      "order_id": "string",
+      "product_id": "string",
+      "name": "string",
+      "price": "big integer",
+      "quantity": "big integer"
+    }
+    ```
+- **PostgreSQL**:
+  ```sql
+  CREATE TABLE orders (
+    order_id VARCHAR PRIMARY KEY,
+    customer_id VARCHAR,
+    order_date TIMESTAMP,
+    total_amount BIGINT,
+    status VARCHAR
+  );
 
-1. Benchmark implementation in Go
-2. Automated setup scripts for databases
-3. Documentation of findings
-4. Performance comparison charts
-5. Recommendations based on results
+  CREATE TABLE items (
+    item_id VARCHAR PRIMARY KEY,
+    order_id VARCHAR REFERENCES orders(order_id),
+    product_id VARCHAR,
+    name VARCHAR,
+    price BIGINT,
+    quantity BIGINT
+  );
+  ```
+  *Note: No triggers used; total_amount calculation and referential integrity handled atomically in application code.*
+
+#### Indexes
+- **MongoDB**: 
+  - Orders collection: Default index on `_id` (order_id) for retrieving orders by ID.
+  - Items collection: Index on `order_id` for efficient joins and querying items by order.
+- **PostgreSQL**: 
+  - Orders table: Primary key index on `order_id` for retrieving orders by ID.
+  - Items table: Index on `order_id` (foreign key) for joins and querying items by order.
+
+## Functional Requirements
+
+### Data Integrity
+- `total_amount` must always reflect the accurate sum of item calculations
+- No orphaned items (items without orders) allowed
+- Referential integrity maintained across operations
+
+### Consistency
+- Atomic operations: All changes to order and items succeed or fail together
+- Read consistency: Queries return consistent state of order and items
+
+### Performance Metrics (To Be Measured)
+- Throughput: Operations per second for each operation type
+- Latency: Response time percentiles (p50, p75, p99) for each operation type
+
+### Transaction Requirements
+- For Scenario 2: Full transactional support ensuring ACID properties
+- Rollback on failure: Incomplete operations must not leave partial state
+- Isolation: Concurrent operations do not interfere with each other
+
+### Test Data Generation
+- Generate synthetic orders with exactly 10 items each
+- Vary data sizes: Small (few KB), medium (hundreds KB), large (MB+)
+- Use big integers for prices and quantities; assume positive values and non-zero quantities
+
+### Validation
+- Post-operation checks: Verify total_amount calculations
+- Consistency audits: Ensure no data corruption after operations
+- Error handling: All operations should implement retry logic with exponential backoff and jitter on exceptions; if all retries fail, the program should exit with an error
+- Graceful failure and recovery mechanisms
+
+## Implementation Notes
+
+### Core Technologies
+- **Language & Runtime**: Java 25 with virtual threads for lightweight concurrency
+- **Drivers**: MongoDB Java Driver (official), PostgreSQL JDBC Driver (official)
+- **Build System**: Gradle with dependency management
+- **Logging**: SLF4J for structured operation tracking
+
+### Connection Pooling Configuration
+Both databases are configured with equivalent, scaled connection pools to ensure fair comparison under high concurrency:
+
+**PostgreSQL (HikariCP)**:
+- `maximumPoolSize`: 300 connections (scaled for CONCURRENCY=300)
+- `minimumIdle`: 20 idle connections (maintains pool warmth)
+- `connectionTimeout`: 30 seconds (fail fast on pool exhaustion)
+- `idleTimeout`: 60 seconds (connection eviction threshold)
+- `maxLifetime`: 5 minutes (connection lifetime limit)
+- `leakDetectionThreshold`: 60 seconds (detect and log leaked connections)
+- `connectionTestQuery`: "SELECT 1" (validate connection health)
+- **Database Configuration**: PostgreSQL container launched with `max_connections=300` parameter
+
+**MongoDB (Native Connection Pool)**:
+- `maxSize`: 300 connections (matches PostgreSQL pool size)
+- `minSize`: 20 idle connections (maintains pool warmth)
+- `maxWaitTime`: 30 seconds (timeout waiting for available connection)
+- `maxConnectionIdleTime`: 60 seconds (idle connection eviction)
+- `maxConnectionLifeTime`: 5 minutes (connection lifetime limit)
+
+### Retry Mechanism with Exponential Backoff
+All database operations implement retry logic via `RetryUtil` class:
+- **Strategy**: Exponential backoff with jitter for transient failure resilience
+- **Default Configuration**:
+  - `maxRetries`: 3 attempts
+  - `initialBackoffMs`: 100 milliseconds
+  - `backoffMultiplier`: 2x exponential (100ms → 200ms → 400ms)
+  - `jitterMs`: Random value up to backoffMs (reduces thundering herd)
+- **Implementation**: Both `executeWithRetry()` (returning results) and `executeVoidWithRetry()` (void operations)
+- **Logging**: Warning logs for retries, error logs for final failures with stack traces
+
+### Concurrency Framework
+Virtual threads are managed via `VirtualThreadExecutor` class:
+- **Executor**: `Executors.newVirtualThreadPerTaskExecutor()` for lightweight virtual thread creation
+- **Bounded Concurrency**: `Semaphore(maxConcurrency)` limits active concurrent operations
+- **Task Tracking**: `AtomicInteger pendingTasks` tracks submitted vs. completed tasks
+- **Exception Handling**: Thread-safe exception collection via `CopyOnWriteArrayList`
+- **Graceful Shutdown**: `awaitCompletion()` waits for all tasks to complete or timeout
+
+### Connection Lifecycle Management
+All database operations follow strict connection lifecycle patterns:
+- **Try-With-Resources Pattern**: All `Connection` objects wrapped in try-with-resources for automatic closure
+- **No Nested Connections**: Query operations do NOT call validation methods that require additional connections (prevents deadlock)
+- **Per-Operation Connection**: Each operation acquires a fresh connection from the pool, executes atomically, then releases
+- **Error Propagation**: Exceptions properly propagate while ensuring connection closure
+
+### Database Schema Design
+
+#### Scenario 1: Embedded/JSONB Storage
+- **MongoDB**: Orders stored as single documents with `items` array embedded in order document
+- **PostgreSQL**: Orders stored as single rows with `items` array in JSONB column
+- **Advantage**: Single-document/row atomicity, simplest transactional model
+- **Limitation**: Limited query flexibility on nested array elements
+
+#### Scenario 2: Multi-Document/Multi-Table Storage
+- **MongoDB**: Separate `orders` and `items` collections with referential links
+- **PostgreSQL**: Separate `orders` and `items` tables with foreign key relationships
+- **Advantage**: Normalized schema, flexible querying, relational integrity
+- **Complexity**: Requires explicit transaction handling, multi-step operations
+
+### Key Implementation Details
+
+**Insert Operation**:
+- Generates sequential order IDs (0 to insert_count-1)
+- Creates 10 items per order with calculated total_amount
+- Scenario 1: Single document/row insert (atomic at DB level)
+- Scenario 2: Order insert + 10 item inserts within transaction (atomic via transaction)
+
+**Update Operations**:
+- **Update-Modify**: Modifies quantities/prices of existing items, recalculates total_amount
+- **Update-Add**: Adds 5 new items to existing order, recalculates total_amount
+- All updates verify data consistency before commit
+
+**Query Operation**:
+- Retrieves full order with all items
+- Scenario 1: Single document/row fetch
+- Scenario 2: Order + all associated items (join on Scenario 2)
+- Validates retrieved total_amount matches calculation (post-query validation, not during)
+
+**Delete Operation**:
+- Removes order and all associated items
+- Scenario 1: Single document/row deletion
+- Scenario 2: Order deletion (cascades to items via foreign key)
+
+### Important Design Decisions
+- **No Intra-Operation Validation**: Query operations do NOT call `validateTotalAmount()` internally to prevent connection pool deadlock under high concurrency
+- **Post-Operation Validation**: Consistency checks performed after operations complete, using separate connection
+- **Atomic Operations**: Both scenarios ensure order + items changes are atomic (single doc/row in Scenario 1, transaction in Scenario 2)
+- **Connection Pool Matching**: Both databases configured with identical pool sizes and timeouts for fair comparison
+- Environment: Docker containers for MongoDB 8 and PostgreSQL 18 on identical hardware (2-core CPU, 2 GB RAM, SSD storage)
+- Operation Execution Flow:
+  - Inserts: Generate sequential order IDs from 0 to (insert_count-1), perform insertions asynchronously using virtual threads bounded by concurrency level
+  - Update-Modify: Execute update-modify-count operations asynchronously with virtual threads bounded by concurrency level, randomly selecting order IDs from 0 to (insert_count-1)
+  - Update-Add: Execute update-add-count operations asynchronously with virtual threads bounded by concurrency level, randomly selecting order IDs from 0 to (insert_count-1)
+  - Queries: Execute query-count operations asynchronously with virtual threads bounded by concurrency level, randomly selecting order IDs from 0 to (insert_count-1)
+  - Deletes: Execute delete-count operations sequentially with order IDs from 0 to (insert_count-1), asynchronously using virtual threads bounded by concurrency level
+- Reporting: 
+  - Measurement mode: CSV output with ";" delimiter, format: operation_name_metric_name_measure_unit|value
+  - Aggregation mode: CSV output with ";" delimiter, header: operation_name_metric_name_measure_unit|filename1|filename2|..., rows: operation_name_metric_name_measure_unit|value1|value2|...
+
+### Shell Script for Automated Benchmarking
+The following steps must be executed in sequence:
+
+1. **Cleanup**: Ensure PostgreSQL and MongoDB Docker containers and volumes are removed
+2. **PostgreSQL Provisioning**: Start PostgreSQL Docker container
+3. **PostgreSQL Benchmark**: Run benchmark app in measurement mode with PostgreSQL, generate output file
+4. **PostgreSQL Cleanup**: Stop and remove PostgreSQL Docker container
+5. **MongoDB Provisioning**: Start MongoDB Docker container
+6. **MongoDB Benchmark**: Run benchmark app in measurement mode with MongoDB using same inputs, generate output file
+7. **MongoDB Cleanup**: Stop and remove MongoDB Docker container
+8. **Aggregation**: Run benchmark app in aggregation mode with both output files to generate final aggregated results
+
+### Command-Line Parameters
+- `--mode`: Mode of operation - "measurement" (run benchmark and generate metrics) or "aggregation" (combine results from multiple measurement files)
+- `--scenario`: Choice between Scenario 1 (Embedded) or Scenario 2 (Multi-Document/Table) [required for measurement mode]
+- `--database`: MongoDB or PostgreSQL [required for measurement mode]
+- `--concurrency`: Number of concurrent virtual threads [required for measurement mode]
+- **Operation Counts** [required for measurement mode]:
+  - `--insert-count`: Number of insert operations (create new orders with 10 items)
+  - `--update-modify-count`: Number of update operations that modify existing item quantities/prices
+  - `--update-add-count`: Number of update operations that add 5 items to existing orders
+  - `--query-count`: Number of query operations (retrieve orders with all items)
+  - `--delete-count`: Number of delete operations (remove orders and all associated items)
+- `--connection-string`: Database connection details (host, port, credentials) [required for measurement mode]
+- `--output-file`: Path for results/metrics output [required for both modes]
+- `--input-files`: Comma-separated list of measurement CSV files to aggregate [required for aggregation mode]
