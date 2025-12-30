@@ -24,6 +24,9 @@ dependencies {
     // PostgreSQL JDBC Driver
     implementation 'org.postgresql:postgresql:42.7.1'
 
+    // HikariCP Connection Pool for PostgreSQL
+    implementation 'com.zaxxer:HikariCP:5.1.0'
+
     // Jackson for JSON/BSON serialization
     implementation 'com.fasterxml.jackson.core:jackson-databind:2.17.0'
     implementation 'com.fasterxml.jackson.datatype:jackson-datatype-jsr310:2.17.0'

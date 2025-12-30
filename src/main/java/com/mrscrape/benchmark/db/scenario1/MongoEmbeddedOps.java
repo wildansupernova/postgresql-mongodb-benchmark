@@ -5,6 +5,7 @@ import com.mrscrape.benchmark.db.MongoConnection;
 import com.mrscrape.benchmark.db.RetryUtil;
 import com.mrscrape.benchmark.model.Item;
 import com.mrscrape.benchmark.model.Order;
+import com.mongodb.WriteConcern;
 import com.mongodb.client.MongoCollection;
 import org.bson.Document;
 
@@ -40,7 +41,8 @@ public class MongoEmbeddedOps implements DatabaseOperations {
     @Override
     public void insert(Order order) throws Exception {
         RetryUtil.executeVoidWithRetry(() -> {
-            MongoCollection<Document> collection = mongoConnection.getDatabase().getCollection(COLLECTION_NAME);
+            MongoCollection<Document> collection = mongoConnection.getDatabase().getCollection(COLLECTION_NAME)
+                    .withWriteConcern(WriteConcern.JOURNALED);
             
             try {
                 List<Document> itemDocs = new ArrayList<>();
@@ -90,7 +92,8 @@ public class MongoEmbeddedOps implements DatabaseOperations {
     @Override
     public void updateModify(String orderId) throws Exception {
         RetryUtil.executeVoidWithRetry(() -> {
-            MongoCollection<Document> collection = mongoConnection.getDatabase().getCollection(COLLECTION_NAME);
+            MongoCollection<Document> collection = mongoConnection.getDatabase().getCollection(COLLECTION_NAME)
+                    .withWriteConcern(WriteConcern.JOURNALED);
             
             Document orderDoc = collection.find(new Document("_id", orderId)).first();
             if (orderDoc == null) {
@@ -124,7 +127,8 @@ public class MongoEmbeddedOps implements DatabaseOperations {
     @Override
     public void updateAdd(String orderId) throws Exception {
         RetryUtil.executeVoidWithRetry(() -> {
-            MongoCollection<Document> collection = mongoConnection.getDatabase().getCollection(COLLECTION_NAME);
+            MongoCollection<Document> collection = mongoConnection.getDatabase().getCollection(COLLECTION_NAME)
+                    .withWriteConcern(WriteConcern.JOURNALED);
             
             Document orderDoc = collection.find(new Document("_id", orderId)).first();
             if (orderDoc == null) {
@@ -202,7 +206,8 @@ public class MongoEmbeddedOps implements DatabaseOperations {
     @Override
     public void delete(String orderId) throws Exception {
         RetryUtil.executeVoidWithRetry(() -> {
-            MongoCollection<Document> collection = mongoConnection.getDatabase().getCollection(COLLECTION_NAME);
+            MongoCollection<Document> collection = mongoConnection.getDatabase().getCollection(COLLECTION_NAME)
+                    .withWriteConcern(WriteConcern.JOURNALED);
             collection.deleteOne(new Document("_id", orderId));
         }, "MongoEmbeddedOps.delete");
     }

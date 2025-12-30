@@ -1,5 +1,7 @@
 package com.mrscrape.benchmark.db;
 
+import com.mongodb.ConnectionString;
+import com.mongodb.MongoClientSettings;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
 import com.mongodb.client.MongoDatabase;
@@ -19,10 +21,22 @@ public class MongoConnection {
     public void connect() throws Exception {
         for (int attempt = 0; attempt < MAX_RETRIES; attempt++) {
             try {
-                mongoClient = MongoClients.create(connectionString);
+                // Configure MongoDB connection pool for high concurrency
+                MongoClientSettings settings = MongoClientSettings.builder()
+                    .applyConnectionString(new ConnectionString(connectionString))
+                    .applyToConnectionPoolSettings(builder ->
+                        builder.maxSize(300)           // Match PostgreSQL max_connections=300 for fair comparison
+                            .minSize(20)                // Keep more connections ready
+                            .maxWaitTime(30, java.util.concurrent.TimeUnit.SECONDS)  // 30 seconds timeout
+                            .maxConnectionIdleTime(60, java.util.concurrent.TimeUnit.SECONDS)  // 1 minute
+                            .maxConnectionLifeTime(5, java.util.concurrent.TimeUnit.MINUTES)   // 5 minutes
+                    )
+                    .build();
+
+                mongoClient = MongoClients.create(settings);
                 mongoClient.getDatabase("admin").runCommand(new org.bson.Document("ping", 1));
                 database = mongoClient.getDatabase("benchmark_db");
-                System.out.println("Connected to MongoDB successfully");
+                System.out.println("Connected to MongoDB with configured connection pool successfully");
                 return;
             } catch (Exception e) {
                 if (attempt < MAX_RETRIES - 1) {

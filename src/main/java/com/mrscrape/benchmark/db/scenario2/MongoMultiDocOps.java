@@ -5,6 +5,8 @@ import com.mrscrape.benchmark.db.MongoConnection;
 import com.mrscrape.benchmark.db.RetryUtil;
 import com.mrscrape.benchmark.model.Item;
 import com.mrscrape.benchmark.model.Order;
+import com.mongodb.WriteConcern;
+import com.mongodb.client.AggregateIterable;
 import com.mongodb.client.ClientSession;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.model.Filters;
@@ -53,8 +55,10 @@ public class MongoMultiDocOps implements DatabaseOperations {
     @Override
     public void insert(Order order) throws Exception {
         RetryUtil.executeVoidWithRetry(() -> {
-            MongoCollection<Document> ordersCollection = mongoConnection.getDatabase().getCollection(ORDERS_COLLECTION);
-            MongoCollection<Document> itemsCollection = mongoConnection.getDatabase().getCollection(ITEMS_COLLECTION);
+            MongoCollection<Document> ordersCollection = mongoConnection.getDatabase().getCollection(ORDERS_COLLECTION)
+                    .withWriteConcern(WriteConcern.JOURNALED);
+            MongoCollection<Document> itemsCollection = mongoConnection.getDatabase().getCollection(ITEMS_COLLECTION)
+                    .withWriteConcern(WriteConcern.JOURNALED);
             
             try (ClientSession session = mongoConnection.getClient().startSession()) {
                 session.startTransaction();
@@ -112,8 +116,10 @@ public class MongoMultiDocOps implements DatabaseOperations {
     @Override
     public void updateModify(String orderId) throws Exception {
         RetryUtil.executeVoidWithRetry(() -> {
-            MongoCollection<Document> ordersCollection = mongoConnection.getDatabase().getCollection(ORDERS_COLLECTION);
-            MongoCollection<Document> itemsCollection = mongoConnection.getDatabase().getCollection(ITEMS_COLLECTION);
+            MongoCollection<Document> ordersCollection = mongoConnection.getDatabase().getCollection(ORDERS_COLLECTION)
+                    .withWriteConcern(WriteConcern.JOURNALED);
+            MongoCollection<Document> itemsCollection = mongoConnection.getDatabase().getCollection(ITEMS_COLLECTION)
+                    .withWriteConcern(WriteConcern.JOURNALED);
             
             try (ClientSession session = mongoConnection.getClient().startSession()) {
                 session.startTransaction();
@@ -159,8 +165,10 @@ public class MongoMultiDocOps implements DatabaseOperations {
     @Override
     public void updateAdd(String orderId) throws Exception {
         RetryUtil.executeVoidWithRetry(() -> {
-            MongoCollection<Document> ordersCollection = mongoConnection.getDatabase().getCollection(ORDERS_COLLECTION);
-            MongoCollection<Document> itemsCollection = mongoConnection.getDatabase().getCollection(ITEMS_COLLECTION);
+            MongoCollection<Document> ordersCollection = mongoConnection.getDatabase().getCollection(ORDERS_COLLECTION)
+                    .withWriteConcern(WriteConcern.JOURNALED);
+            MongoCollection<Document> itemsCollection = mongoConnection.getDatabase().getCollection(ITEMS_COLLECTION)
+                    .withWriteConcern(WriteConcern.JOURNALED);
             
             try (ClientSession session = mongoConnection.getClient().startSession()) {
                 session.startTransaction();
@@ -219,23 +227,35 @@ public class MongoMultiDocOps implements DatabaseOperations {
     public Order query(String orderId) throws Exception {
         return RetryUtil.executeWithRetry(() -> {
             MongoCollection<Document> ordersCollection = mongoConnection.getDatabase().getCollection(ORDERS_COLLECTION);
-            MongoCollection<Document> itemsCollection = mongoConnection.getDatabase().getCollection(ITEMS_COLLECTION);
             
-            Document orderDoc = ordersCollection.find(Filters.eq("_id", orderId)).first();
-            if (orderDoc == null) {
+            // Use aggregation pipeline with $lookup to join orders and items
+            List<Document> pipeline = List.of(
+                new Document("$match", new Document("_id", orderId)),
+                new Document("$lookup", new Document()
+                    .append("from", ITEMS_COLLECTION)
+                    .append("localField", "_id")
+                    .append("foreignField", "order_id")
+                    .append("as", "items")
+                )
+            );
+            
+            AggregateIterable<Document> result = ordersCollection.aggregate(pipeline);
+            Document joinedDoc = result.first();
+            
+            if (joinedDoc == null) {
                 throw new Exception("Order not found: " + orderId);
             }
             
             Order order = new Order(
-                    orderDoc.getString("_id"),
-                    orderDoc.getString("customer_id"),
-                    orderDoc.getDate("order_date").toInstant(),
-                    orderDoc.getString("status")
+                    joinedDoc.getString("_id"),
+                    joinedDoc.getString("customer_id"),
+                    joinedDoc.getDate("order_date").toInstant(),
+                    joinedDoc.getString("status")
             );
-            order.setTotalAmount(orderDoc.getLong("total_amount"));
+            order.setTotalAmount(joinedDoc.getLong("total_amount"));
             
-            List<Document> itemDocs = itemsCollection.find(Filters.eq("order_id", orderId))
-                    .into(new ArrayList<>());
+            @SuppressWarnings("unchecked")
+            List<Document> itemDocs = (List<Document>) joinedDoc.get("items");
             
             for (Document itemDoc : itemDocs) {
                 Item item = new Item(
@@ -257,8 +277,10 @@ public class MongoMultiDocOps implements DatabaseOperations {
     @Override
     public void delete(String orderId) throws Exception {
         RetryUtil.executeVoidWithRetry(() -> {
-            MongoCollection<Document> ordersCollection = mongoConnection.getDatabase().getCollection(ORDERS_COLLECTION);
-            MongoCollection<Document> itemsCollection = mongoConnection.getDatabase().getCollection(ITEMS_COLLECTION);
+            MongoCollection<Document> ordersCollection = mongoConnection.getDatabase().getCollection(ORDERS_COLLECTION)
+                    .withWriteConcern(WriteConcern.JOURNALED);
+            MongoCollection<Document> itemsCollection = mongoConnection.getDatabase().getCollection(ITEMS_COLLECTION)
+                    .withWriteConcern(WriteConcern.JOURNALED);
             
             try (ClientSession session = mongoConnection.getClient().startSession()) {
                 session.startTransaction();

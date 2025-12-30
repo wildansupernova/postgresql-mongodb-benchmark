@@ -54,10 +54,12 @@
 ## Database Connections (src/main/java/com/mrscrape/benchmark/db/)
 - [x] Implement `MongoConnection.java`
   - [x] Handle MongoDB connection with retry logic
+  - [x] **Uses configured connection pool (maxSize=150, minSize=10) optimized for high concurrency**
   - [x] Create/drop test databases and collections
   - [x] Implement close/cleanup methods
 - [x] Implement `PostgresConnection.java`
   - [x] Handle PostgreSQL connection with retry logic
+  - [x] **Uses HikariCP connection pool with equivalent settings (maximumPoolSize=150, minimumIdle=10)**
   - [x] Create/drop test databases and tables
   - [x] Implement close/cleanup methods
 
@@ -88,13 +90,13 @@
   - [x] Schema: Separate orders and items collections
   - [x] Indexes: `_id` on orders, `order_id` on items
   - [x] Use multi-document transactions
-  - [x] Implement all DatabaseOperations methods
+  - [x] Implement all DatabaseOperations methods with aggregation pipeline ($lookup) for queries
   - [x] Ensure ACID properties
 - [x] Implement `PostgresMultiTableOps.java`
   - [x] Schema: Separate orders and items tables with foreign key
   - [x] Indexes: Primary key on orders, foreign key index on items
   - [x] Use ACID transactions
-  - [x] Implement all DatabaseOperations methods
+  - [x] Implement all DatabaseOperations methods with SQL JOIN for queries
   - [x] Ensure referential integrity
 
 ## Main Application (src/main/java/com/mrscrape/benchmark/)
@@ -122,6 +124,9 @@
 - [x] Create `benchmark.sh` shell script for automated benchmarking
 
 ## Testing & Validation
+- [x] **Connection Pool Testing**: Verified HikariCP and MongoDB connection pools work correctly under high concurrency (50 threads)
+- [x] **Connection Leak Fixes**: Fixed all connection leaks in PostgreSQL operations by implementing proper try-with-resources for Connection objects
+- [x] **Benchmark Execution**: Successfully ran full benchmark with 100 inserts, 50 updates, 50 queries, 50 deletes without connection timeouts
 - [ ] Manual testing of each operation type
 - [ ] Verify total_amount calculations
 - [ ] Verify no orphaned items

@@ -34,7 +34,7 @@ This specification outlines the functional requirements for benchmarking MongoDB
 
 ### Package Structure
 ```
-src/main/java/com/databases/benchmark/
+src/main/java/com/mrscrape/benchmark/
 ├── BenchmarkApp.java              # Main CLI application class
 ├── model/
 │   ├── Order.java                 # Order data model class
@@ -140,7 +140,7 @@ src/main/java/com/databases/benchmark/
   - Insert: Create order, then create 10 items, calculate and store total_amount (transactional)
   - Update: Modify items, recalculate total_amount (transactional)
   - Update: Add 5 items to an order, recalculate total_amount (transactional)
-  - Query: Join order with items, validate total_amount consistency
+  - Query: **JOIN/AGGREGATE** order with items using aggregation pipeline ($lookup) or SQL JOIN, validate total_amount consistency
   - Delete: Remove order and items (transactional)
 
 #### Schema
@@ -227,8 +227,102 @@ src/main/java/com/databases/benchmark/
 - Graceful failure and recovery mechanisms
 
 ## Implementation Notes
-- Use official drivers: MongoDB Java driver, PostgreSQL JDBC driver
-- Benchmark framework: Custom Java 25 application with virtual threads for concurrency, using Gradle for dependency management
+
+### Core Technologies
+- **Language & Runtime**: Java 25 with virtual threads for lightweight concurrency
+- **Drivers**: MongoDB Java Driver (official), PostgreSQL JDBC Driver (official)
+- **Build System**: Gradle with dependency management
+- **Logging**: SLF4J for structured operation tracking
+
+### Connection Pooling Configuration
+Both databases are configured with equivalent, scaled connection pools to ensure fair comparison under high concurrency:
+
+**PostgreSQL (HikariCP)**:
+- `maximumPoolSize`: 300 connections (scaled for CONCURRENCY=300)
+- `minimumIdle`: 20 idle connections (maintains pool warmth)
+- `connectionTimeout`: 30 seconds (fail fast on pool exhaustion)
+- `idleTimeout`: 60 seconds (connection eviction threshold)
+- `maxLifetime`: 5 minutes (connection lifetime limit)
+- `leakDetectionThreshold`: 60 seconds (detect and log leaked connections)
+- `connectionTestQuery`: "SELECT 1" (validate connection health)
+- **Database Configuration**: PostgreSQL container launched with `max_connections=300` parameter
+
+**MongoDB (Native Connection Pool)**:
+- `maxSize`: 300 connections (matches PostgreSQL pool size)
+- `minSize`: 20 idle connections (maintains pool warmth)
+- `maxWaitTime`: 30 seconds (timeout waiting for available connection)
+- `maxConnectionIdleTime`: 60 seconds (idle connection eviction)
+- `maxConnectionLifeTime`: 5 minutes (connection lifetime limit)
+
+### Retry Mechanism with Exponential Backoff
+All database operations implement retry logic via `RetryUtil` class:
+- **Strategy**: Exponential backoff with jitter for transient failure resilience
+- **Default Configuration**:
+  - `maxRetries`: 3 attempts
+  - `initialBackoffMs`: 100 milliseconds
+  - `backoffMultiplier`: 2x exponential (100ms → 200ms → 400ms)
+  - `jitterMs`: Random value up to backoffMs (reduces thundering herd)
+- **Implementation**: Both `executeWithRetry()` (returning results) and `executeVoidWithRetry()` (void operations)
+- **Logging**: Warning logs for retries, error logs for final failures with stack traces
+
+### Concurrency Framework
+Virtual threads are managed via `VirtualThreadExecutor` class:
+- **Executor**: `Executors.newVirtualThreadPerTaskExecutor()` for lightweight virtual thread creation
+- **Bounded Concurrency**: `Semaphore(maxConcurrency)` limits active concurrent operations
+- **Task Tracking**: `AtomicInteger pendingTasks` tracks submitted vs. completed tasks
+- **Exception Handling**: Thread-safe exception collection via `CopyOnWriteArrayList`
+- **Graceful Shutdown**: `awaitCompletion()` waits for all tasks to complete or timeout
+
+### Connection Lifecycle Management
+All database operations follow strict connection lifecycle patterns:
+- **Try-With-Resources Pattern**: All `Connection` objects wrapped in try-with-resources for automatic closure
+- **No Nested Connections**: Query operations do NOT call validation methods that require additional connections (prevents deadlock)
+- **Per-Operation Connection**: Each operation acquires a fresh connection from the pool, executes atomically, then releases
+- **Error Propagation**: Exceptions properly propagate while ensuring connection closure
+
+### Database Schema Design
+
+#### Scenario 1: Embedded/JSONB Storage
+- **MongoDB**: Orders stored as single documents with `items` array embedded in order document
+- **PostgreSQL**: Orders stored as single rows with `items` array in JSONB column
+- **Advantage**: Single-document/row atomicity, simplest transactional model
+- **Limitation**: Limited query flexibility on nested array elements
+
+#### Scenario 2: Multi-Document/Multi-Table Storage
+- **MongoDB**: Separate `orders` and `items` collections with referential links
+- **PostgreSQL**: Separate `orders` and `items` tables with foreign key relationships
+- **Advantage**: Normalized schema, flexible querying, relational integrity
+- **Complexity**: Requires explicit transaction handling, multi-step operations
+
+### Key Implementation Details
+
+**Insert Operation**:
+- Generates sequential order IDs (0 to insert_count-1)
+- Creates 10 items per order with calculated total_amount
+- Scenario 1: Single document/row insert (atomic at DB level)
+- Scenario 2: Order insert + 10 item inserts within transaction (atomic via transaction)
+
+**Update Operations**:
+- **Update-Modify**: Modifies quantities/prices of existing items, recalculates total_amount
+- **Update-Add**: Adds 5 new items to existing order, recalculates total_amount
+- All updates verify data consistency before commit
+
+**Query Operation**:
+- Retrieves full order with all items
+- Scenario 1: Single document/row fetch
+- Scenario 2: Order + all associated items (join on Scenario 2)
+- Validates retrieved total_amount matches calculation (post-query validation, not during)
+
+**Delete Operation**:
+- Removes order and all associated items
+- Scenario 1: Single document/row deletion
+- Scenario 2: Order deletion (cascades to items via foreign key)
+
+### Important Design Decisions
+- **No Intra-Operation Validation**: Query operations do NOT call `validateTotalAmount()` internally to prevent connection pool deadlock under high concurrency
+- **Post-Operation Validation**: Consistency checks performed after operations complete, using separate connection
+- **Atomic Operations**: Both scenarios ensure order + items changes are atomic (single doc/row in Scenario 1, transaction in Scenario 2)
+- **Connection Pool Matching**: Both databases configured with identical pool sizes and timeouts for fair comparison
 - Environment: Docker containers for MongoDB 8 and PostgreSQL 18 on identical hardware (2-core CPU, 2 GB RAM, SSD storage)
 - Operation Execution Flow:
   - Inserts: Generate sequential order IDs from 0 to (insert_count-1), perform insertions asynchronously using virtual threads bounded by concurrency level
