@@ -235,7 +235,7 @@ src/main/java/com/databases/benchmark/
   - Update-Modify: Execute update-modify-count operations asynchronously with virtual threads bounded by concurrency level, randomly selecting order IDs from 0 to (insert_count-1)
   - Update-Add: Execute update-add-count operations asynchronously with virtual threads bounded by concurrency level, randomly selecting order IDs from 0 to (insert_count-1)
   - Queries: Execute query-count operations asynchronously with virtual threads bounded by concurrency level, randomly selecting order IDs from 0 to (insert_count-1)
-  - Deletes: Execute delete-count operations asynchronously with virtual threads bounded by concurrency level, randomly selecting order IDs from 0 to (insert_count-1)
+  - Deletes: Execute delete-count operations sequentially with order IDs from 0 to (insert_count-1), asynchronously using virtual threads bounded by concurrency level
 - Reporting: 
   - Measurement mode: CSV output with ";" delimiter, format: operation_name_metric_name_measure_unit|value
   - Aggregation mode: CSV output with ";" delimiter, header: operation_name_metric_name_measure_unit|filename1|filename2|..., rows: operation_name_metric_name_measure_unit|value1|value2|...

@@ -1,0 +1,38 @@
+# Gradle
+.gradle/
+build/
+dist/
+*.jar
+*.war
+
+# IDE
+.idea/
+.vscode/
+*.iml
+*.iws
+*.ipr
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Benchmark results and logs
+benchmark_results/
+benchmark.log
+*.log
+
+# Docker and database
+.env
+docker-compose.override.yml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Misc
+*.pid
+target/
+.classpath
+.project
+.settings/
+bin/
